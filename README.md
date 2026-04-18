@@ -1,6 +1,6 @@
 # CmdRoster
 
-**CmdRoster** is a small **command-line and script management** tool for **zsh on macOS**. Register shell snippets or scripts once, then pick them with **fzf** — the chosen command is appended to your **zsh history** (and thus `HISTFILE` when enabled). Press **↑** (previous line) or **Ctrl+R** to recall it; nothing is executed until you press **Enter**.
+**CmdRoster** is a small **command-line and script management** tool for **zsh on macOS**. Register shell snippets or scripts once, then pick them with **fzf** — the chosen command is placed on your **command line** ready to review and execute.
 
 The interactive command is still named **`luo`** (three letters, easy to type). Data lives under **`~/.luo/`** by default (`LUO_HOME`).
 
@@ -49,20 +49,20 @@ If `LUO_HOME` is not the default `~/.luo`, the installer adds `export LUO_HOME=�
 luo add "caffeinate -di"       # register a shell command
 luo add ./my-script.sh         # register a script (symlink under ~/.luo/scripts/)
 luo add -n wake "caffeinate -di"   # custom name
-luo help                       # fuzzy-find; Enter appends choice to history (↑ to recall)
+luo help                       # fuzzy-find; Enter puts the command on your line
 ```
 
 In `luo help`, press **Fn+F2** to toggle **delete mode** (green UI). In delete mode, **Enter** removes the selected entry. Press **Fn+F2** again to leave delete mode.
 
 ### How `luo help` applies your choice
 
-Picking uses zsh **`print -s`**: the command becomes the **latest history event** in memory and is written to **`HISTFILE`** according to your options (`INC_APPEND_HISTORY`, `SHARE_HISTORY`, etc.). This avoids `print -z` / ZLE quirks across terminals.
+After you pick an entry, the command is placed on your **command line** (via `print -z` called inside a `precmd` hook, after fzf has fully exited and the terminal is restored). You can edit it if you want, then press **Enter** to execute.
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `luo help` | fzf UI (sorted by name); **Tab** fills the query with the current name; **Enter** appends the command to **zsh history** (↑ / Ctrl+R to recall); **Fn+F2** toggles delete mode; **Ctrl+N** / **Esc** quit |
+| `luo help` | fzf UI (sorted by name); **Tab** fills the query with the current name; **Enter** puts the command on your line (ready to edit/run); **Fn+F2** toggles delete mode; **Ctrl+N** / **Esc** quit |
 | `luo add [options] …` | Register a command or script (see below) |
 | `luo list` | Print the registry (TSV with header) |
 | `luo sync [-p]` | Merge missing `scripts/` entries; `-p` prunes stale `file` rows |
