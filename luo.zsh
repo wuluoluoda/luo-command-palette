@@ -209,7 +209,11 @@ _luo_alias_cmd() {
 
 _luo_require_fzf() {
   if ! command -v fzf >/dev/null 2>&1; then
-    print -u2 "luo: 需要安装 fzf（例如: brew install fzf）"
+    if [[ "$(uname -s 2>/dev/null)" == Darwin ]]; then
+      print -u2 "luo: 需要安装 fzf，例如: brew install fzf"
+    else
+      print -u2 "luo: 需要安装 fzf，例如: sudo apt-get install fzf  或参考 https://github.com/junegunn/fzf#installation"
+    fi
     return 127
   fi
 }

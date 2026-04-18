@@ -6,12 +6,23 @@
 
 > English documentation: [README.md](README.md)
 
+## 平台支持
+
+| 平台 | 状态 |
+|------|------|
+| macOS | ✅ 完整支持 |
+| Windows（WSL 2）| ✅ 完整支持 |
+| Linux（原生）| ✅ 完整支持 |
+| Windows（原生 PowerShell / CMD）| ❌ 暂不支持 |
+
+**Windows 用户**：通过 **WSL 2**（Windows 的 Linux 子系统）使用，详见下方 [Windows WSL 2 安装步骤](#windows-wsl-2)。
+
 ## 依赖
 
 | 工具 | 安装方式 |
 |------|---------|
-| zsh | macOS 自带 |
-| [fzf](https://github.com/junegunn/fzf) | `brew install fzf` |
+| zsh | macOS 自带；Linux/WSL：`sudo apt-get install zsh` |
+| [fzf](https://github.com/junegunn/fzf) | macOS：`brew install fzf`；Linux/WSL：`sudo apt-get install fzf` |
 
 ## 安装
 
@@ -21,7 +32,7 @@
 curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/install.sh | bash
 ```
 
-安装脚本会自动检测 fzf，若未安装会询问是否通过 Homebrew 安装。
+安装脚本会自动检测操作系统，并在 fzf 未安装时使用对应的包管理器自动安装（macOS 用 `brew`，Linux/WSL 用 `apt-get` / `pacman` / `dnf` / `yum` 等）。
 
 ### 克隆后安装
 
@@ -44,6 +55,26 @@ LUO_HOME=~/my-tools ./install.sh
 ```
 
 若 `LUO_HOME` 不是默认的 `~/.luo`，安装脚本会在 `~/.zshrc` 里写入 `export LUO_HOME=…`。
+
+### Windows（WSL 2）
+
+1. 在 **PowerShell（管理员）** 里安装 WSL 2 和 Ubuntu：
+
+   ```powershell
+   wsl --install
+   ```
+
+2. 打开 **Windows Terminal** 里的 Ubuntu 标签，安装 zsh 并运行一键安装：
+
+   ```bash
+   sudo apt-get update && sudo apt-get install -y zsh
+   chsh -s $(which zsh)      # 把 zsh 设为默认 Shell
+   curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/install.sh | bash
+   ```
+
+3. 重新打开一个 Windows Terminal Ubuntu 标签，`luo` 即可使用。
+
+> **提示**：Windows Terminal 默认支持 256 色，fzf 界面显示正常；若使用老版终端（ConHost）可能颜色不完整。
 
 ## 快速上手
 

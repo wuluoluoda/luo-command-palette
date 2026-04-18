@@ -6,12 +6,23 @@ The interactive command is named **`luo`** (three letters, easy to type). Data l
 
 > 中文说明见 [README_CN.md](README_CN.md)
 
+## Platform support
+
+| Platform | Status |
+|----------|--------|
+| macOS | ✅ Full support |
+| Windows (WSL 2) | ✅ Full support |
+| Linux (native) | ✅ Full support |
+| Windows (native PowerShell / CMD) | ❌ Not supported |
+
+**Windows users**: install via **WSL 2** (Windows Subsystem for Linux). See the [WSL install guide](#windows-wsl-2) below.
+
 ## Requirements
 
 | Tool | Install |
 |------|---------|
-| zsh | Built into macOS |
-| [fzf](https://github.com/junegunn/fzf) | `brew install fzf` |
+| zsh | macOS built-in · Linux/WSL: `sudo apt-get install zsh` |
+| [fzf](https://github.com/junegunn/fzf) | macOS: `brew install fzf` · Linux/WSL: `sudo apt-get install fzf` |
 
 ## Install
 
@@ -21,7 +32,7 @@ The interactive command is named **`luo`** (three letters, easy to type). Data l
 curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/install.sh | bash
 ```
 
-The installer detects missing **fzf** and offers to install it via Homebrew.
+The installer auto-detects your OS and installs **fzf** via the right package manager if missing (`brew` on macOS, `apt-get` / `pacman` / `dnf` / `yum` on Linux/WSL).
 
 ### Clone and install
 
@@ -44,6 +55,25 @@ LUO_HOME=~/my-tools ./install.sh
 ```
 
 If `LUO_HOME` is not the default `~/.luo`, the installer adds `export LUO_HOME=…` to `~/.zshrc`.
+
+### Windows (WSL 2)
+
+1. Install WSL 2 and a distro (Ubuntu recommended):
+
+   ```powershell
+   # in PowerShell (Admin)
+   wsl --install
+   ```
+
+2. Open **Ubuntu** (or your distro) from Windows Terminal, then install zsh and run the one-liner:
+
+   ```bash
+   sudo apt-get update && sudo apt-get install -y zsh
+   chsh -s $(which zsh)          # set zsh as default shell
+   curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/install.sh | bash
+   ```
+
+3. Open a new **Windows Terminal** tab (with Ubuntu profile) — `luo` is ready.
 
 ## Quick start
 
