@@ -17,81 +17,135 @@
 The repo ships **two independent versions** under `zsh/` and `pwsh/`.  
 They share the same TSV registry format so you can keep one `~/.luo/` folder across both shells.
 
+### PowerShell on Windows vs Linux vs macOS
+
+**PowerShell 7+ (`pwsh`)** is the same language and module surface on Windows, Linux, and macOS — this repo’s `pwsh/install.ps1` and `pwsh/luo.ps1` target that stack. **Windows PowerShell 5.1** (the one named `powershell.exe`) is Windows-only and differs slightly in APIs and defaults; the installer still works on 5.1 where noted below.
+
 ---
 
-## Install — macOS / Linux / WSL 2 (zsh)
+## Install by platform
 
-### One-liner (no clone needed)
+### macOS
+
+**zsh** — one-liner (no `git clone`):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/zsh/install.sh | bash
 ```
 
-The installer auto-detects the OS and installs **fzf** if missing  
-(`brew` on macOS · `apt-get / pacman / dnf / yum` on Linux / WSL 2).
-
-### After cloning
-
-```bash
-git clone https://github.com/wuluoluoda/cmdroster.git
-cd cmdroster
-./zsh/install.sh
-```
-
-Activate in the **current** terminal (new shells load from `~/.zshrc` automatically):
-
-```bash
-source ~/.luo/luo.zsh
-```
-
-### WSL 2 — first-time setup
-
-```powershell
-# In PowerShell (Admin) — install WSL 2 with Ubuntu
-wsl --install
-```
-
-```bash
-# In Ubuntu terminal
-sudo apt-get update && sudo apt-get install -y zsh fzf
-chsh -s $(which zsh)   # set zsh as default shell
-curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/zsh/install.sh | bash
-```
-
----
-
-## Install — Windows / cross-platform (PowerShell)
-
-Requires **PowerShell 5.1+** (Windows built-in) or **PowerShell Core 7+** (cross-platform).
-
-### One-liner — Windows (no clone needed)
-
-```powershell
-irm https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/pwsh/install.ps1 | iex
-```
-
-### One-liner — Linux / macOS with pwsh (no clone needed)
+**PowerShell (`pwsh`)** — one-liner (no `git clone`):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/pwsh/install.ps1 | pwsh
 ```
 
-### After cloning
+The **zsh** installer installs **fzf** via Homebrew if missing. The **pwsh** installer uses `brew` for fzf on macOS.
 
-```powershell
-git clone https://github.com/wuluoluoda/cmdroster.git
-cd cmdroster
-./pwsh/install.ps1
+After **zsh** install, activate once (new terminals load `~/.zshrc` automatically):
+
+```bash
+source ~/.luo/luo.zsh
 ```
 
-The installer auto-installs **fzf** if missing  
-(`winget → scoop → choco` on Windows · `brew` on macOS · `apt-get / pacman / dnf` on Linux).
-
-Activate in the **current** session (new sessions load from `$PROFILE` automatically):
+After **pwsh** install:
 
 ```powershell
 . "$HOME/.luo/luo.ps1"
 ```
+
+---
+
+### Linux (native)
+
+**zsh** — one-liner (no `git clone`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/zsh/install.sh | bash
+```
+
+**PowerShell (`pwsh`)** — one-liner (no `git clone`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/pwsh/install.ps1 | pwsh
+```
+
+The **zsh** installer uses `apt-get` / `pacman` / `dnf` / `yum` / `zypper` when available. The **pwsh** installer uses the same Linux package managers for **fzf** (`winget` is only used on Windows).
+
+Activate: same as macOS (`source ~/.luo/luo.zsh` or `. "$HOME/.luo/luo.ps1"`).
+
+---
+
+### Windows
+
+**PowerShell** (Windows Terminal, etc.) — one-liner (no `git clone`):
+
+```powershell
+irm https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/pwsh/install.ps1 | iex
+```
+
+**WSL 2 + zsh** — run the Linux **zsh** one-liner *inside* the WSL terminal (Ubuntu, etc.), not in Windows PowerShell.
+
+The **PowerShell** installer installs **fzf** via `winget`, then **scoop**, then **Chocolatey** if needed.
+
+**WSL 2 — first-time setup** (then use the Linux zsh flow):
+
+```powershell
+# PowerShell (Admin)
+wsl --install
+```
+
+```bash
+# Inside Ubuntu (WSL)
+sudo apt-get update && sudo apt-get install -y zsh fzf
+chsh -s "$(which zsh)"
+curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/zsh/install.sh | bash
+```
+
+---
+
+## Source code without `git clone`
+
+You can download a snapshot of the repo and run either installer from the extracted folder (branch **`main`** in the URLs below; replace if you use another default branch).
+
+**macOS / Linux (tarball):**
+
+```bash
+curl -fsSL -L -o /tmp/cmdroster.tar.gz https://github.com/wuluoluoda/cmdroster/archive/refs/heads/main.tar.gz
+tar xzf /tmp/cmdroster.tar.gz -C /tmp
+cd /tmp/cmdroster-main
+bash zsh/install.sh          # zsh version
+# optional: pwsh -File ./pwsh/install.ps1
+```
+
+**Windows (ZIP, PowerShell):**
+
+```powershell
+$u = 'https://github.com/wuluoluoda/cmdroster/archive/refs/heads/main.zip'
+$z = Join-Path $env:TEMP 'cmdroster-main.zip'
+Invoke-WebRequest $u -OutFile $z
+Expand-Archive $z -DestinationPath $env:TEMP -Force
+Set-Location (Join-Path $env:TEMP 'cmdroster-main')
+.\pwsh\install.ps1           # PowerShell version
+# optional: wsl bash zsh/install.sh   # zsh via WSL
+```
+
+---
+
+## Clone the repository (all variants in one checkout)
+
+```bash
+git clone https://github.com/wuluoluoda/cmdroster.git
+cd cmdroster
+
+# zsh edition (macOS / Linux / WSL)
+bash zsh/install.sh
+
+# PowerShell edition (Windows / Linux / macOS — run pwsh where you use it)
+pwsh -File ./pwsh/install.ps1
+# On Windows you can also:  .\pwsh\install.ps1
+```
+
+Requires **PowerShell 5.1+** (Windows) or **PowerShell 7+** (`pwsh`, recommended everywhere) for `pwsh/install.ps1`.
 
 ---
 

@@ -67,6 +67,9 @@ function Install-Fzf {
         } elseif (Get-Command dnf -ErrorAction SilentlyContinue) {
             Write-Host "→  通过 dnf 安装 fzf …"
             sudo dnf install -y fzf
+        } elseif (Get-Command yum -ErrorAction SilentlyContinue) {
+            Write-Host "→  通过 yum 安装 fzf …"
+            sudo yum install -y fzf
         } else {
             Write-Error "请手动安装 fzf：https://github.com/junegunn/fzf#installation"
             exit 1
@@ -91,11 +94,10 @@ if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
 New-Item -ItemType Directory -Path $DEST                        -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $DEST 'scripts')  -Force | Out-Null
 
-# 判断是否为远程执行（iex / piped pwsh）
-$isRemote = $MyInvocation.MyCommand.CommandType -eq 'Script' -and
-            $MyInvocation.ScriptName -eq ''
+# 判断是否为远程执行（irm … | iex / 管道喂给 pwsh）：无脚本根目录则走下载分支
+$isRemote = [string]::IsNullOrEmpty($PSScriptRoot)
 
-if ($isRemote -or -not $PSScriptRoot) {
+if ($isRemote) {
     if (-not (Get-Command curl -ErrorAction SilentlyContinue) -and
         -not (Get-Command Invoke-WebRequest -ErrorAction SilentlyContinue)) {
         Write-Error "需要 curl 或 Invoke-WebRequest，未找到。"
@@ -114,7 +116,7 @@ if ($isRemote -or -not $PSScriptRoot) {
     }
 } else {
     $root = $PSScriptRoot
-    Copy-Item (Join-Path $root 'luo.ps1')              (Join-Path $DEST 'luo.ps1')              -Force
+    Copy-Item (Join-Path $root 'luo.ps1')               (Join-Path $DEST 'luo.ps1')               -Force
     Copy-Item (Join-Path $root 'registry.tsv.example') (Join-Path $DEST 'registry.tsv.example') -Force
 }
 
@@ -134,13 +136,16 @@ $profileContent = Get-Content $profilePath -Raw -ErrorAction SilentlyContinue
 if ($profileContent -and $profileContent.Contains($MARK_BEGIN)) {
     Write-Host "已检测到 `$PROFILE 中的 luo 配置块，跳过写入。"
 } else {
-    $luoLine = ". '$DEST/luo.ps1'"
-    if ($IS_WIN) { $luoLine = ". '$DEST\luo.ps1'" }
+    $luoPath      = Join-Path $DEST 'luo.ps1'
+    $luoPathLit   = $luoPath.Replace("'", "''")
+    $destHomeLit  = $DEST.Replace("'", "''")
+    $luoLine      = ". '$luoPathLit'"
+    $envLine      = if ($DEST -ne (Join-Path $HOME '.luo')) { "`$env:LUO_HOME = '$destHomeLit'" } else { '' }
     $block = @"
 
 $MARK_BEGIN
-$( if ($DEST -ne (Join-Path $HOME '.luo')) { "`$env:LUO_HOME = '$DEST'" } )
-if (Test-Path '$($luoLine.Split("'")[1])') { $luoLine }
+$envLine
+if (Test-Path '$luoPathLit') { $luoLine }
 $MARK_END
 "@
     Add-Content $profilePath $block -Encoding UTF8

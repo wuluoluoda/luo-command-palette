@@ -17,75 +17,137 @@
 仓库提供 **两个独立版本**，分别位于 `zsh/` 和 `pwsh/` 目录。  
 两个版本共用相同的 TSV registry 格式，可共享同一个 `~/.luo/` 数据目录。
 
+### Windows / Linux / macOS 上的 PowerShell 是否一致？
+
+**PowerShell 7+（`pwsh`）** 在 Windows、Linux、macOS 上语言与模块面基本一致，本仓库的 `pwsh/install.ps1`、`pwsh/luo.ps1` 主要面向 **PowerShell 7+**。**Windows PowerShell 5.1**（`powershell.exe`）仅存在于 Windows，部分 API 与默认值与 7+ 略有差异；安装脚本仍可在 5.1 上运行（见下文要求）。
+
 ---
 
-## 安装 — macOS / Linux / WSL 2（zsh 版）
+## 按平台安装
 
-### 一行命令安装（无需克隆仓库）
+### macOS
+
+**zsh** — 一行安装（无需 `git clone`）：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/zsh/install.sh | bash
 ```
 
-安装脚本自动检测系统并安装 **fzf**（macOS 用 `brew`，Linux/WSL 用 `apt-get / pacman / dnf / yum`）。
-
-### 克隆后安装
-
-```bash
-git clone https://github.com/wuluoluoda/cmdroster.git
-cd cmdroster
-./zsh/install.sh
-```
-
-安装完成后，在**当前终端**执行以下命令立刻激活（新终端会从 `~/.zshrc` 自动加载）：
-
-```bash
-source ~/.luo/luo.zsh
-```
-
-### WSL 2 初次安装
-
-```powershell
-# PowerShell（管理员）——安装 WSL 2 + Ubuntu
-wsl --install
-```
-
-```bash
-# Ubuntu 终端中
-sudo apt-get update && sudo apt-get install -y zsh fzf
-chsh -s $(which zsh)   # 把 zsh 设为默认 Shell
-curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/zsh/install.sh | bash
-```
-
----
-
-## 安装 — Windows / 跨平台（PowerShell 版）
-
-需要 **Windows PowerShell 5.1+**（Windows 内置）或 **PowerShell Core 7+**（跨平台）。
-
-### 一行命令安装 — Windows（无需克隆仓库）
-
-```powershell
-irm https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/pwsh/install.ps1 | iex
-```
-
-### 一行命令安装 — Linux / macOS（已安装 pwsh）
+**PowerShell（`pwsh`）** — 一行安装（无需 `git clone`）：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/pwsh/install.ps1 | pwsh
 ```
 
-### 克隆后安装
+**zsh** 安装脚本会在缺少 **fzf** 时用 Homebrew 安装；**pwsh** 在 macOS 上同样通过 `brew` 安装 fzf。
 
-```powershell
-git clone https://github.com/wuluoluoda/cmdroster.git
-cd cmdroster
-./pwsh/install.ps1
+安装后立刻激活：**zsh** 新开终端会从 `~/.zshrc` 加载，当前会话可执行：
+
+```bash
+source ~/.luo/luo.zsh
 ```
 
-安装脚本自动安装 **fzf**（Windows 依次尝试 `winget → scoop → choco`，macOS 用 `brew`，Linux 用 `apt-get / pacman / dnf`）。
+**pwsh**：
 
-安装完成后，在**当前会话**执行以下命令立刻激活（新终端会从 `$PROFILE` 自动加载）：
+```powershell
+. "$HOME/.luo/luo.ps1"
+```
+
+---
+
+### Linux（原生）
+
+**zsh** — 一行安装（无需 `git clone`）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/zsh/install.sh | bash
+```
+
+**PowerShell（`pwsh`）** — 一行安装（无需 `git clone`）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/pwsh/install.ps1 | pwsh
+```
+
+**zsh** 安装脚本会按系统尝试 `apt-get` / `pacman` / `dnf` / `yum` / `zypper` 等安装 fzf。**pwsh** 在 Linux 上使用同类包管理器（`winget` 仅在 Windows 上使用）。
+
+激活方式与 macOS 相同：`source ~/.luo/luo.zsh` 或 `. "$HOME/.luo/luo.ps1"`。
+
+---
+
+### Windows
+
+**PowerShell**（Windows Terminal 等）— 一行安装（无需 `git clone`）：
+
+```powershell
+irm https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/pwsh/install.ps1 | iex
+```
+
+**WSL 2 + zsh**：请在 **WSL 里的 Linux 终端**（如 Ubuntu）中执行上面的 **Linux zsh** 一行命令，不要在 Windows PowerShell 里直接跑 zsh 安装脚本。
+
+**PowerShell** 安装脚本会依次尝试 `winget`、`scoop`、`chocolatey` 安装 fzf。
+
+**WSL 2 初次安装**（装好后按 Linux zsh 流程即可）：
+
+```powershell
+# PowerShell（管理员）
+wsl --install
+```
+
+```bash
+# Ubuntu（WSL）终端中
+sudo apt-get update && sudo apt-get install -y zsh fzf
+chsh -s "$(which zsh)"
+curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/zsh/install.sh | bash
+```
+
+---
+
+## 不用 `git clone` 获取源码
+
+可下载仓库快照，解压后在目录内运行安装脚本（以下链接默认分支为 **`main`**；若你使用其他默认分支请替换 URL）。
+
+**macOS / Linux（tar.gz）：**
+
+```bash
+curl -fsSL -L -o /tmp/cmdroster.tar.gz https://github.com/wuluoluoda/cmdroster/archive/refs/heads/main.tar.gz
+tar xzf /tmp/cmdroster.tar.gz -C /tmp
+cd /tmp/cmdroster-main
+bash zsh/install.sh          # zsh 版
+# 可选：pwsh -File ./pwsh/install.ps1
+```
+
+**Windows（ZIP，PowerShell）：**
+
+```powershell
+$u = 'https://github.com/wuluoluoda/cmdroster/archive/refs/heads/main.zip'
+$z = Join-Path $env:TEMP 'cmdroster-main.zip'
+Invoke-WebRequest $u -OutFile $z
+Expand-Archive $z -DestinationPath $env:TEMP -Force
+Set-Location (Join-Path $env:TEMP 'cmdroster-main')
+.\pwsh\install.ps1           # PowerShell 版
+# 可选：wsl bash zsh/install.sh   # 在 WSL 里装 zsh 版
+```
+
+---
+
+## 克隆整个仓库（一次拿到 zsh + pwsh 全部文件）
+
+```bash
+git clone https://github.com/wuluoluoda/cmdroster.git
+cd cmdroster
+
+# zsh 版（macOS / Linux / WSL）
+bash zsh/install.sh
+
+# PowerShell 版（在你日常使用的环境里执行 pwsh）
+pwsh -File ./pwsh/install.ps1
+# Windows 上也可：.\pwsh\install.ps1
+```
+
+`pwsh/install.ps1` 需要 **Windows PowerShell 5.1+** 或 **PowerShell 7+（`pwsh`，推荐）**。
+
+安装完成后，**pwsh** 新会话会从 `$PROFILE` 自动加载；当前会话可执行：
 
 ```powershell
 . "$HOME/.luo/luo.ps1"

@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# CmdRoster (luo) — 安装脚本
-# macOS : ./install.sh  或  curl -fsSL .../install.sh | bash
-# WSL   : 同上（在 WSL 终端里运行）
-# curl  : curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/install.sh | bash
+# CmdRoster (luo) — zsh 版安装脚本（macOS / Linux / WSL）
+#
+# 直接下载（无需 git clone）：
+#   curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/zsh/install.sh | bash
+#
+# 克隆后：
+#   bash zsh/install.sh
+#
+# Windows 原生 PowerShell 用户请使用：pwsh/install.ps1
 set -euo pipefail
 
 GITHUB_RAW="https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/zsh"
