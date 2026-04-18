@@ -555,6 +555,55 @@ _luo_add() {
   print -r -- "已登记命令(shell): $dest_name"
 }
 
+# fzf 退出后立刻 print -z 在部分终端会失效；延后到当前命令结束后写入 ZLE 缓冲。
+# 仍失败时（无 ZLE / 非 TTY）：macOS 用 pbcopy，否则打印到 stderr 供手动复制。
+typeset -g Luo_ZpickTmp
+
+_luo_finalize_pick_line() {
+  local text=$1
+  zmodload zsh/zle 2>/dev/null
+  if [[ -o interactive ]] && [[ -o zle ]] && [[ -t 0 ]]; then
+    print -z -- "$text"
+    return 0
+  fi
+  if [[ "$(uname -s)" == Darwin ]] && command -v pbcopy >/dev/null 2>&1; then
+    print -rn -- "$text" | command pbcopy
+    print -u2 "luo: 已复制到剪贴板（当前终端无法直接写入命令行）。"
+    return 0
+  fi
+  print -u2 "luo: 请手动复制以下命令：" >&2
+  print -r -- "$text"
+}
+
+_luo_sched_apply_zpick() {
+  emulate -L zsh
+  local f=$Luo_ZpickTmp text
+  unset Luo_ZpickTmp
+  [[ -n $f && -f $f ]] || return 0
+  text=$(<$f)
+  command rm -f -- "$f"
+  _luo_finalize_pick_line "$text"
+}
+
+_luo_queue_printz() {
+  local text=$1 f
+  if [[ ${LUO_PRINTZ:-defer} == immediate ]]; then
+    _luo_finalize_pick_line "$text"
+    return
+  fi
+  if ! zmodload zsh/sched 2>/dev/null; then
+    _luo_finalize_pick_line "$text"
+    return
+  fi
+  f=$(mktemp "${TMPDIR:-/tmp}/luo-zpick.XXXXXX") || {
+    _luo_finalize_pick_line "$text"
+    return
+  }
+  print -r -- "$text" >"$f"
+  Luo_ZpickTmp=$f
+  sched +0 _luo_sched_apply_zpick
+}
+
 _luo_pick() {
   local h line name desc kind payload fullpath cmd
   local -a fl
@@ -630,7 +679,7 @@ _luo_pick() {
 
     if [[ $kind == shell ]]; then
       _luo_usage_incr "$name"
-      print -z -- "$payload"
+      _luo_queue_printz "$payload"
       return 0
     fi
 
@@ -650,7 +699,7 @@ _luo_pick() {
       cmd="zsh ${(q)fullpath}"
     fi
     _luo_usage_incr "$name"
-    print -z -- "$cmd"
+    _luo_queue_printz "$cmd"
     return 0
   done
 }

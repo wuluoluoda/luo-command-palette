@@ -54,6 +54,13 @@ luo help                       # fuzzy-find; Enter fills the line buffer
 
 In `luo help`, press **Fn+F2** to toggle **delete mode** (green UI). In delete mode, **Enter** removes the selected entry. Press **Fn+F2** again to leave delete mode.
 
+### Command-line fill (some terminals)
+
+After you pick an entry, **CmdRoster** writes the command with zsh `print -z` (ZLE buffer). Some terminals (especially right after **fzf** exits) drop the buffer if that runs too early, so the implementation **defers** the write with `zsh/sched` until the current `luo help` call has finished.
+
+- If you still see nothing on the line, try **`export LUO_PRINTZ=immediate`** (writes immediately; may work better in a few setups, worse in others).
+- If ZLE is not active (non-interactive / embedded shell), on **macOS** the command is copied with **`pbcopy`** and a short message is printed to stderr.
+
 ## Commands
 
 | Command | Description |
