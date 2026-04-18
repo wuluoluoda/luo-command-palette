@@ -555,17 +555,29 @@ _luo_add() {
   print -r -- "已登记命令(shell): $dest_name"
 }
 
-# 选中后写入 zsh 历史（print -s），由 HISTFILE 持久化；用户按 ↑ 或 Ctrl+R 调出再执行。
-# 不依赖 print -z / ZLE 缓冲，各终端表现一致。
+# 选中后把命令填入下一行的 ZLE 缓冲（print -z）。
+# 直接在 _luo_pick 里调 print -z 不可靠：fzf 退出后终端状态未完全还原，zsh 重绘
+# prompt 时会把 ZLE 缓冲抹掉。改为在 precmd 钩子里调用，此时 fzf 已彻底退出、
+# 终端已还原，print -z 能稳定把命令放到命令行上。
+typeset -g _LUO_PENDING_CMD=""
+
+_luo_precmd_inject() {
+  [[ -n $_LUO_PENDING_CMD ]] || return
+  local c=$_LUO_PENDING_CMD
+  _LUO_PENDING_CMD=""
+  add-zsh-hook -d precmd _luo_precmd_inject 2>/dev/null
+  print -z -- "$c"
+}
+
 _luo_commit_pick_command() {
   local text=$1
   if [[ ! -o interactive ]]; then
-    print -u2 "luo: 非交互 shell，无法记入历史。命令为：" >&2
-    print -r -- "$text"
+    print -u2 "luo: 非交互 shell，命令为：$text" >&2
     return 1
   fi
-  print -s -- "$text"
-  print -u2 "luo: 已写入 zsh 历史（↑ 或 Ctrl+R 调出后回车执行）。"
+  _LUO_PENDING_CMD=$text
+  autoload -Uz add-zsh-hook 2>/dev/null
+  add-zsh-hook precmd _luo_precmd_inject 2>/dev/null
 }
 
 _luo_pick() {
@@ -586,7 +598,7 @@ _luo_pick() {
       pr=$'\e[1;32mDEL>\e[0m '
       color='prompt:#00cc00,pointer:#00ff00,fg+:#ccffcc,border:#00aa00'
     else
-      hdr=$'Tab 缩小 | Enter 写入历史 (↑/Ctrl+R 调出) | \e[33mFn+F2\e[0m 删除模式（绿色）| Ctrl+N / Esc 退出'
+      hdr=$'Tab 缩小 | Enter 填入命令行 | \e[33mFn+F2\e[0m 删除模式（绿色）| Ctrl+N / Esc 退出'
       pr='> '
       color=
     fi
