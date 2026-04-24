@@ -123,11 +123,10 @@ Registry columns: `name`, `description`, `kind` (`shell` | `file`), `payload`.
 ## Uninstall
 
 ```bash
-rm -rf ~/.luo
-# Also remove the block in ~/.zshrc between:
-# >>> luo script hub
-# <<< luo script hub
+./install.sh --uninstall
 ```
+
+This removes `~/.luo/` and the luo block from `~/.zshrc`. Open a new terminal or run `exec zsh` to finish.
 
 ## License
 

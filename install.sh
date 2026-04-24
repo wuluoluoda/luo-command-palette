@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# luo — 一键安装脚本
-# 用法（克隆后）: ./install.sh
-# curl: curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/install.sh | bash
+# luo — 一键安装/卸载脚本
+# 安装: ./install.sh
+# 卸载: ./install.sh --uninstall
+# curl安装: curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/install.sh | bash
 set -euo pipefail
 
 GITHUB_RAW="https://raw.githubusercontent.com/wuluoluoda/cmdroster/main"
@@ -11,6 +12,36 @@ MARK_BEGIN="# >>> luo script hub"
 MARK_END="# <<< luo script hub"
 
 _require_cmd() { command -v "$1" >/dev/null 2>&1; }
+
+_uninstall() {
+  echo "开始卸载 luo..."
+
+  if [[ -d "$DEST" ]]; then
+    rm -rf "$DEST"
+    echo "✅ 已删除 $DEST"
+  else
+    echo "ℹ️  未找到安装目录 $DEST"
+  fi
+
+  local zshrc="${ZDOTDIR:-$HOME}/.zshrc"
+  if [[ -f "$zshrc" ]] && grep -qF "$MARK_BEGIN" "$zshrc" 2>/dev/null; then
+    local tmp
+    tmp=$(mktemp)
+    sed -n "/${MARK_BEGIN}/,/ ${MARK_END}/p" "$zshrc" 2>/dev/null | grep -vF "$MARK_BEGIN" | grep -vF "$MARK_END" | grep -v "^$" >/dev/null || true
+    awk "/${MARK_BEGIN}/,/${MARK_END}/{next} {print}" "$zshrc" > "$tmp" && mv "$tmp" "$zshrc"
+    echo "✅ 已从 $zshrc 移除 luo 配置块"
+  fi
+
+  echo ""
+  echo "✅ luo 已完全卸载"
+  echo ""
+  echo "请重新打开终端或执行: exec zsh"
+  exit 0
+}
+
+if [[ "${1:-}" == "--uninstall" ]]; then
+  _uninstall
+fi
 
 # curl | bash 时 BASH_SOURCE[0] 为空、"bash" 或 "-"
 _is_remote() {

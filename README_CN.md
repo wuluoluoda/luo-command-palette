@@ -152,12 +152,10 @@ luo alias off       # 取消快捷命令
 ## 卸载
 
 ```bash
-rm -rf ~/.luo
-
-# 同时从 ~/.zshrc 中删除以下两行标记之间的配置块：
-# >>> luo script hub
-# <<< luo script hub
+./install.sh --uninstall
 ```
+
+这会删除 `~/.luo/` 目录并从 `~/.zshrc` 移除 luo 配置块。之后请重新打开终端或执行 `exec zsh`。
 
 ## License
 
