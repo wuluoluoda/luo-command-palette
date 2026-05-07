@@ -5,7 +5,7 @@
 # Registry: $LUO_HOME/registry.tsv — tab-separated, UTF-8:
 #   name	description	kind	payload
 # kind: file → payload 为相对 LUO_HOME 的路径（如 scripts/foo.sh）
-# kind: shell → payload 为整段 shell 命令（由 luo cmd 选入后记入 zsh 历史再调出；勿含 Tab）
+# kind: shell → payload 为整段 shell 命令（由 luo cmd 选入后记入 zsh 历史再调出；新写入会转义 Tab/换行）
 
 _luo_home() {
   print -r -- "${LUO_HOME:-$HOME/.luo}"
@@ -17,6 +17,65 @@ _luo_registry() {
 
 _luo_header_new() {
   print -r $'name\tdescription\tkind\tpayload'
+}
+
+_luo_tsv_escape() {
+  local s=$1
+  if [[ $s != __luo_esc1__:* && $s != *'\'* && $s != *$'\t'* && $s != *$'\r'* && $s != *$'\n'* ]]; then
+    print -r -- "$s"
+    return 0
+  fi
+  s=${s//\\/\\\\}
+  s=${s//$'\t'/\\t}
+  s=${s//$'\r'/\\r}
+  s=${s//$'\n'/\\n}
+  print -r -- "__luo_esc1__:$s"
+}
+
+_luo_tsv_unescape() {
+  local s=$1 out= ch next
+  integer i len
+  [[ $s == __luo_esc1__:* ]] || { print -r -- "$s"; return 0; }
+  s=${s#__luo_esc1__:}
+  len=${#s}
+  for (( i = 1; i <= len; i++ )); do
+    ch=${s[i]}
+    if [[ $ch == '\' && $i -lt $len ]]; then
+      i=$(( i + 1 ))
+      next=${s[i]}
+      case $next in
+        n) out+=$'\n' ;;
+        r) out+=$'\r' ;;
+        t) out+=$'\t' ;;
+        '\') out+='\' ;;
+        *) out+="\\$next" ;;
+      esac
+    else
+      out+=$ch
+    fi
+  done
+  print -r -- "$out"
+}
+
+_luo_registry_line() {
+  print -r -- "$(_luo_tsv_escape "$1")"$'\t'"$(_luo_tsv_escape "$2")"$'\t'"$(_luo_tsv_escape "$3")"$'\t'"$(_luo_tsv_escape "$4")"
+}
+
+_luo_parse_registry_line() {
+  local line=$1 norm
+  local -a parts
+  typeset -ga _LUO_ROW
+  _LUO_ROW=()
+  norm=$(_luo_normalize_body_line "$line") || return 1
+  IFS=$'\t' read -rA parts <<<"$norm"
+  (( ${#parts[@]} >= 4 )) || return 1
+  _LUO_ROW=(
+    "$(_luo_tsv_unescape "$parts[1]")"
+    "$(_luo_tsv_unescape "$parts[2]")"
+    "$(_luo_tsv_unescape "$parts[3]")"
+    "$(_luo_tsv_unescape "$parts[4]")"
+  )
+  return 0
 }
 
 # 将正文行规范为四列；支持旧三列（视为 kind=file, payload=原第三列）
@@ -246,6 +305,9 @@ _luo_usage() {
                     删除前若次数 >30 会交互确认（非交互终端则拒绝删除）。
   luo list          按名字母序列出（同样会先补全）
   luo add [选项] <一段文本…>  导入一条入口（见下方判定规则）
+                    多行粘贴：luo add 后直接粘贴，按 Ctrl-D 保存（默认按首个命令片段命名）
+                    也可把第一行接在 add 后面：luo add cd app，继续粘贴后续行，按 Ctrl-D 保存
+                    管道/剪贴板：pbpaste | luo add -  （单独的 - 表示从标准输入读取）
   luo sync [-p]     扫描 scripts/ 补全缺失；-p 删除失效 file 表项
   luo rm / remove   直接进入 luo cmd 且初始为删除模式（不接受其它参数）
   luo alias [名字]  设置「luo cmd / pick」的快捷命令（如 pp）；luo alias 查看；luo alias off 取消
@@ -257,11 +319,14 @@ luo add 判定（剩余参数会拼成一段字符串，外层引号会剥掉一
   · 若看起来像「脚本路径」且磁盘上存在该普通文件 → kind=file：在 scripts/ 建符号链接并登记
     条件：路径含 \"/\"，或以 \"./\" \"../\" 开头，且 [[ -f 解析后路径 ]]
   · 否则 → kind=shell：整段字符串作为命令（由 luo cmd 选入后记入历史再调出），不建链接
+    支持真实多行命令：执行 luo add 后粘贴多行命令，按 Ctrl-D 保存；
+    若第一行写成 luo add cd app，会继续读取后续行直到 Ctrl-D，合并到同一条命令；
+    也可用单独参数 - 从标准输入读入：pbpaste | luo add -
 
   无 \"/\" 的相对脚本请写成 ./foo.sh 再 luo add。
 
 选项:
-  -n <名称>   列表里显示的名字（脚本默认 basename；命令默认取首词）
+  -n <名称>   列表里显示的名字（脚本默认 basename；命令默认取首个命令片段，重名自动加 -2）
   -d <简介>   列表简介；file 且省略时读 \"# luo:desc ...\"
   -f          覆盖同名；shell 时若已有相同命令也会直接删掉旧条目再登记"
 }
@@ -286,14 +351,13 @@ _luo_list() {
 
 # 按首列名字判断是否存在
 _luo_name_in_registry() {
-  local want=$1 r line norm n d k p
+  local want=$1 r line
   r=$(_luo_registry)
   [[ -f $r ]] || return 1
   while IFS= read -r line; do
     [[ -z $line ]] && continue
-    norm=$(_luo_normalize_body_line "$line") || continue
-    IFS=$'\t' read -r n d k p <<<"$norm"
-    [[ $n == "$want" ]] && return 0
+    _luo_parse_registry_line "$line" || continue
+    [[ $_LUO_ROW[1] == "$want" ]] && return 0
   done < <(tail -n +2 "$r" 2>/dev/null)
   return 1
 }
@@ -315,32 +379,47 @@ _luo_desc_from_script() {
   return 1
 }
 
+_luo_desc_one_line() {
+  local s=$1
+  s=${s//$'\t'/ }
+  s=${s//$'\r'/ }
+  s=${s//$'\n'/ ; }
+  print -r -- "$s"
+}
+
 _luo_remove_registry_row_by_name() {
-  local name=$1 r tmp
+  local name=$1 r tmp line
   r=$(_luo_registry)
   tmp=$(mktemp "${TMPDIR:-/tmp}/luo-registry.XXXXXX")
-  command awk -F '\t' -v n="$name" "NR==1{print;next}\$1!=n{print}" "$r" >"$tmp" || return 1
+  _luo_header_new >"$tmp"
+  tail -n +2 "$r" 2>/dev/null | while IFS= read -r line; do
+    [[ -z $line ]] && continue
+    _luo_parse_registry_line "$line" || continue
+    [[ $_LUO_ROW[1] == "$name" ]] && continue
+    print -r -- "$line" >>"$tmp"
+  done
   command mv -f "$tmp" "$r"
 }
 
 # 打印一行 kind<TAB>payload，供按名称删除使用
 _luo_row_kind_payload_for_name() {
-  local want=$1 r line norm n d k p
+  local want=$1 r line
+  typeset -g _LUO_ROW_KIND="" _LUO_ROW_PAYLOAD=""
   r=$(_luo_registry)
   [[ -f $r ]] || return 1
   while IFS= read -r line; do
     [[ -z $line ]] && continue
-    norm=$(_luo_normalize_body_line "$line") || continue
-    IFS=$'\t' read -r n d k p <<<"$norm"
-    [[ $n == "$want" ]] || continue
-    print -r -- "$k"$'\t'"$p"
+    _luo_parse_registry_line "$line" || continue
+    [[ $_LUO_ROW[1] == "$want" ]] || continue
+    _LUO_ROW_KIND=$_LUO_ROW[3]
+    _LUO_ROW_PAYLOAD=$_LUO_ROW[4]
     return 0
   done < <(tail -n +2 "$r" 2>/dev/null)
   return 1
 }
 
 _luo_remove_by_name() {
-  local name=$1 h kind payload kp
+  local name=$1 h kind payload
   [[ -n $name ]] || { print -u2 "luo: 名称不能为空"; return 1 }
   [[ $name == */* ]] && { print -u2 "luo: 名称不得包含路径分隔符"; return 1 }
 
@@ -351,11 +430,12 @@ _luo_remove_by_name() {
     return 1
   fi
 
-  kp=$(_luo_row_kind_payload_for_name "$name") || {
+  _luo_row_kind_payload_for_name "$name" || {
     print -u2 "luo: 无法解析条目: $name"
     return 1
   }
-  IFS=$'\t' read -r kind payload <<<"$kp"
+  kind=$_LUO_ROW_KIND
+  payload=$_LUO_ROW_PAYLOAD
 
   if [[ $kind == file ]]; then
     if [[ $payload == scripts/* ]]; then
@@ -375,14 +455,13 @@ _luo_remove_by_name() {
 
 # file 且 payload 为给定路径（如 scripts/foo）
 _luo_registry_has_file_payload() {
-  local want=$1 r line norm n d k p
+  local want=$1 r line
   r=$(_luo_registry)
   [[ -f $r ]] || return 1
   while IFS= read -r line; do
     [[ -z $line ]] && continue
-    norm=$(_luo_normalize_body_line "$line") || continue
-    IFS=$'\t' read -r n d k p <<<"$norm"
-    [[ $k == file && $p == "$want" ]] && return 0
+    _luo_parse_registry_line "$line" || continue
+    [[ $_LUO_ROW[3] == file && $_LUO_ROW[4] == "$want" ]] && return 0
   done < <(tail -n +2 "$r" 2>/dev/null)
   return 1
 }
@@ -404,8 +483,8 @@ _luo_sync_merge() {
     fi
     desc=$(_luo_desc_from_script "${f:A}")
     [[ -z $desc ]] && desc="no description"
-    desc=${desc//$'\t'/ }
-    print -r -- "${f:t}"$'\t'"$desc"$'\t'"file"$'\t'"$rel" >>"$r"
+    desc=$(_luo_desc_one_line "$desc")
+    _luo_registry_line "${f:t}" "$desc" "file" "$rel" >>"$r"
     [[ -n $verbose ]] && print -r -- "sync: 已登记 $rel"
     added=$((added + 1))
   done
@@ -414,7 +493,7 @@ _luo_sync_merge() {
 }
 
 _luo_sync_prune() {
-  local h r tmp line norm n d k p
+  local h r tmp line norm n k p
   h=$(_luo_home)
   r=$(_luo_registry)
   [[ -f $r ]] || return 1
@@ -423,7 +502,10 @@ _luo_sync_prune() {
   tail -n +2 "$r" | while IFS= read -r line; do
     [[ -z $line ]] && continue
     norm=$(_luo_normalize_body_line "$line") || continue
-    IFS=$'\t' read -r n d k p <<<"$norm"
+    _luo_parse_registry_line "$line" || continue
+    n=$_LUO_ROW[1]
+    k=$_LUO_ROW[3]
+    p=$_LUO_ROW[4]
     if [[ $k == file && $p == scripts/* && ! -e "$h/$p" ]]; then
       print -u2 "sync -p: 已移除失效条目: $n ($p)"
       continue
@@ -451,18 +533,50 @@ _luo_sync() {
   [[ $prune -eq 1 ]] && _luo_sync_prune
 }
 
-# 从 shell 命令取默认 registry 名（首词，仅保留安全字符）
+# 从 shell 命令取默认 registry 名（取首个命令片段，保留安全字符）
 _luo_default_name_from_shell() {
-  local c=$1 w
-  local -a z
+  local c=$1 line w part
+  local -a lines z picked
   c=${c## #}
   c=${c%% #}
-  z=(${(z)c})
-  w=$z[1]
+  lines=("${(@f)c}")
+  line=${lines[1]}
+  z=(${(z)line})
+  if [[ ${z[1]} == cd && -n ${z[2]} ]]; then
+    picked=("${z[1]}" "${z[2]:t}")
+  elif [[ ${z[1]} == npm && ${z[2]} == run && -n ${z[3]} ]]; then
+    picked=("${z[1]}" "${z[3]}")
+  elif (( ${#z[@]} >= 2 )); then
+    picked=("${z[1]}" "${z[2]}")
+  else
+    picked=("${z[1]}")
+  fi
+  for part in $picked; do
+    part=${part//[^A-Za-z0-9_.-]/_}
+    part=${part##_}
+    part=${part%%_}
+    [[ -n $part ]] && w+="${w:+-}$part"
+  done
   [[ -z $w ]] && w="shell"
-  w=${w//[^A-Za-z0-9_.-]/_}
-  [[ -z $w ]] && w="shell"
+  if (( ${#w} > 24 )); then
+    w=${w[1,24]}
+    w=${w%-}
+    w=${w%_}
+    w=${w%.}
+    [[ -z $w ]] && w="shell"
+  fi
   print -r -- "$w"
+}
+
+_luo_unique_default_name() {
+  local base=$1 name i
+  name=$base
+  i=2
+  while _luo_name_in_registry "$name"; do
+    name="${base}-${i}"
+    i=$(( i + 1 ))
+  done
+  print -r -- "$name"
 }
 
 # 用于判断「是否为同一条 shell 命令」（去首尾空白、Tab，按 shell 词法压成空格序列）
@@ -476,20 +590,26 @@ _luo_shell_payload_key() {
     s=${s%[[:space:]]}
   done
   [[ -n $s ]] || return 1
+  if [[ $s == *$'\n'* || $s == *$'\r'* ]]; then
+    print -r -- "multiline:$s"
+    return 0
+  fi
   print -r -- "${(j: :)${(z)s}}"
 }
 
 # 打印所有与 payload 等价的 shell 登记名（每行一个，已排序去重）
 _luo_matching_shell_names_for_payload_key() {
-  local payload=$1 r line norm n d k p want key
+  local payload=$1 r line n k p want key
   want=$(_luo_shell_payload_key "$payload") || return 1
   r=$(_luo_registry)
   [[ -f $r ]] || return 1
   {
     while IFS= read -r line; do
       [[ -z $line ]] && continue
-      norm=$(_luo_normalize_body_line "$line") || continue
-      IFS=$'\t' read -r n d k p <<<"$norm"
+      _luo_parse_registry_line "$line" || continue
+      n=$_LUO_ROW[1]
+      k=$_LUO_ROW[3]
+      p=$_LUO_ROW[4]
       [[ $k == shell ]] || continue
       key=$(_luo_shell_payload_key "$p") || continue
       [[ $key == "$want" ]] || continue
@@ -509,6 +629,30 @@ _luo_arg_is_script_path() {
   return 0
 }
 
+_luo_read_payload_from_stdin() {
+  local prompt=${1:-"luo add: 请粘贴多行命令，结束后按 Ctrl-D："}
+  local line
+  local -a lines
+  if [[ -t 0 ]]; then
+    print -u2 "$prompt"
+  fi
+  while IFS= read -r line || [[ -n $line ]]; do
+    lines+=("$line")
+  done
+  print -r -- "${(pj:\n:)lines}"
+}
+
+_luo_read_queued_paste_lines() {
+  local line
+  local -a lines
+  [[ -t 0 ]] || return 0
+  while IFS= read -r -t 0.08 line; do
+    lines+=("$line")
+  done
+  (( ${#lines[@]} > 0 )) || return 0
+  print -r -- "${(pj:\n:)lines}"
+}
+
 _luo_add() {
   local force=0 dest_name= desc= raw p src_abs h dest relpath r name kind payload
   while [[ $# -gt 0 ]]; do
@@ -524,6 +668,9 @@ _luo_add() {
         desc=$2
         shift 2
         ;;
+      -)
+        break
+        ;;
       -*)
         print -u2 "luo add: 未知选项: $1"
         return 1
@@ -532,8 +679,20 @@ _luo_add() {
     esac
   done
 
-  [[ $# -gt 0 ]] || { print -u2 "luo add: 请提供命令或脚本路径"; return 1 }
-  raw="${(j: :)@}"
+  if [[ $# -eq 0 ]]; then
+    raw=$(_luo_read_payload_from_stdin)
+  elif [[ $# -eq 1 && $1 == - ]]; then
+    raw=$(_luo_read_payload_from_stdin)
+  else
+    raw="${(j: :)@}"
+    if [[ -t 0 && $# -gt 1 ]]; then
+      local continuation
+      continuation=$(_luo_read_payload_from_stdin "luo add: 若还有后续行请继续粘贴，结束后按 Ctrl-D 保存：")
+      if [[ -n $continuation ]]; then
+        raw+=$'\n'"$continuation"
+      fi
+    fi
+  fi
   raw=${raw## #}
   raw=${raw%% #}
   if [[ $raw == \"*\" ]]; then
@@ -582,24 +741,27 @@ _luo_add() {
       desc=$(_luo_desc_from_script "$src_abs")
       [[ -z $desc ]] && desc="no description"
     fi
-    desc=${desc//$'\t'/ }
+    desc=$(_luo_desc_one_line "$desc")
 
     command ln -sf "$src_abs" "$dest" || return 1
     if [[ ! -x $src_abs ]]; then
       command chmod +x "$src_abs" 2>/dev/null || true
     fi
 
-    print -r -- "$dest_name"$'\t'"$desc"$'\t'"file"$'\t'"$relpath" >>"$r"
+    _luo_registry_line "$dest_name" "$desc" "file" "$relpath" >>"$r"
     print -r -- "已登记脚本(file): $dest_name -> $dest"
     return 0
   fi
 
   kind=shell
   payload=$raw
-  payload=${payload//$'\t'/ }
   [[ -n $payload ]] || { print -u2 "luo add: 命令为空"; return 1 }
 
-  [[ -n $dest_name ]] || dest_name=$(_luo_default_name_from_shell "$payload")
+  local auto_name=0
+  if [[ -z $dest_name ]]; then
+    auto_name=1
+    dest_name=$(_luo_default_name_from_shell "$payload")
+  fi
   [[ $dest_name == */* ]] && { print -u2 "luo add: -n 不得包含路径分隔符"; return 1 }
 
   local -a shell_dups
@@ -618,6 +780,9 @@ _luo_add() {
     elif (( ${#shell_dups[@]} == 1 )) && [[ $shell_dups[1] == "$dest_name" ]]; then
       print -r -- "luo add: 已存在相同登记（名称与命令均一致），跳过"
       return 0
+    elif [[ $auto_name -eq 1 ]]; then
+      print -r -- "luo add: 已存在相同命令（登记名: ${(j:，)shell_dups}），跳过"
+      return 0
     elif [[ -t 0 ]]; then
       print -u2 "luo add: 已存在相同命令，当前登记名: ${(j:，)shell_dups}"
       print -u2 "luo add: 命令: $payload"
@@ -633,7 +798,9 @@ _luo_add() {
     fi
   fi
 
-  if _luo_name_in_registry "$dest_name"; then
+  if [[ $auto_name -eq 1 ]]; then
+    dest_name=$(_luo_unique_default_name "$dest_name")
+  elif _luo_name_in_registry "$dest_name"; then
     if [[ $force -eq 1 ]]; then
       _luo_remove_registry_row_by_name "$dest_name"
     else
@@ -643,16 +810,89 @@ _luo_add() {
   fi
 
   if [[ -z $desc ]]; then
-    if (( ${#payload} > 72 )); then
-      desc="${payload[1,72]}…"
+    local desc_src
+    desc_src=$(_luo_desc_one_line "$payload")
+    if (( ${#desc_src} > 72 )); then
+      desc="${desc_src[1,72]}…"
     else
-      desc=$payload
+      desc=$desc_src
     fi
   fi
-  desc=${desc//$'\t'/ }
+  desc=$(_luo_desc_one_line "$desc")
 
-  print -r -- "$dest_name"$'\t'"$desc"$'\t'"shell"$'\t'"$payload" >>"$r"
+  _luo_registry_line "$dest_name" "$desc" "shell" "$payload" >>"$r"
   print -r -- "已登记命令(shell): $dest_name"
+}
+
+_luo_build_add_command_from_paste() {
+  local pasted=$1 first rest tok payload_first payload cmd arg
+  local -a words add_args pass_args payload_words
+  [[ $pasted == *$'\n'* ]] || return 1
+  first=${pasted%%$'\n'*}
+  rest=${pasted#*$'\n'}
+  words=(${(z)first}) || return 1
+  (( ${#words[@]} >= 2 )) || return 1
+  [[ $words[1] == luo && $words[2] == add ]] || return 1
+
+  add_args=("${words[@]:2}")
+  while (( ${#add_args[@]} > 0 )); do
+    tok=$add_args[1]
+    case $tok in
+      -f)
+        pass_args+=("$tok")
+        shift add_args
+        ;;
+      -n|-d)
+        (( ${#add_args[@]} >= 2 )) || return 1
+        pass_args+=("$tok" "$add_args[2]")
+        shift 2 add_args
+        ;;
+      -)
+        shift add_args
+        break
+        ;;
+      -*)
+        return 1
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  payload_words=("$add_args[@]")
+  payload_first="${(j: :)payload_words}"
+  if [[ -n $payload_first ]]; then
+    payload=$payload_first$'\n'$rest
+  else
+    payload=$rest
+  fi
+  [[ -n $payload ]] || return 1
+
+  cmd="print -r -- ${(q)payload} | luo add"
+  if (( ${#pass_args[@]} > 0 )); then
+    for arg in $pass_args; do
+      cmd+=" ${(q)arg}"
+    done
+  fi
+  cmd+=" -"
+  print -r -- "$cmd"
+}
+
+_luo_bracketed_paste() {
+  local pasted cmd
+  zle .bracketed-paste pasted
+  if [[ -z $BUFFER ]]; then
+    cmd=$(_luo_build_add_command_from_paste "$pasted")
+    if [[ -n $cmd ]]; then
+      BUFFER=$cmd
+      CURSOR=${#BUFFER}
+      zle accept-line
+      return
+    fi
+  fi
+  LBUFFER+=$pasted
+  zle -f yank 2>/dev/null || true
 }
 
 # 选中后把命令填入下一行的 ZLE 缓冲（print -z）。
@@ -730,7 +970,11 @@ _luo_pick() {
     line=${fl[2]}
     [[ -n $line ]] || return 0
 
-    IFS=$'\t' read -r name desc kind payload <<<"$line"
+    _luo_parse_registry_line "$line" || return 1
+    name=$_LUO_ROW[1]
+    desc=$_LUO_ROW[2]
+    kind=$_LUO_ROW[3]
+    payload=$_LUO_ROW[4]
     [[ -n $name && -n $kind && -n $payload ]] || return 1
 
     if (( del_mode )); then
@@ -879,6 +1123,10 @@ if (( $+functions[compdef] )); then
   _luo_try_compdef
 elif autoload -Uz add-zsh-hook 2>/dev/null; then
   add-zsh-hook precmd _luo_register_compdef_once
+fi
+
+if [[ -o interactive ]]; then
+  zle -N bracketed-paste _luo_bracketed_paste 2>/dev/null || :
 fi
 
 # 若 zshrc 里先 source 本文件、后 compinit，第一次执行 luo 时再注册一次

@@ -88,7 +88,7 @@ ql
 
 | 选项 | 说明 |
 |------|------|
-| `-n <名称>` | 自定义显示名称（默认取命令的第一个词或脚本的文件名） |
+| `-n <名称>` | 自定义显示名称（默认生成短名称，如 `cd-app`、`npm-dev`；重名自动加 `-2`） |
 | `-d <简介>` | 自定义简介（脚本文件内可写 `# luo:desc …` 自动读取） |
 | `-f` | 强制覆盖同名条目 |
 
@@ -97,10 +97,15 @@ ql
 ```bash
 luo add "npm run dev"               # shell 命令
 luo add -n dev "npm run dev"        # 自定义名称
+luo add                             # 然后粘贴多行 shell 命令，按 Ctrl-D 保存
+luo add cd app                      # 也可把第一行接在 add 后面，继续粘贴后续行后按 Ctrl-D
+pbpaste | luo add -                 # 或直接从剪贴板导入多行命令
 luo add ./build.sh                  # 脚本（建软链接）
 luo add ~/bin/deploy.sh             # 绝对路径脚本
 luo add -f "npm run dev"            # 强制覆盖同名条目
 ```
+
+多行 shell 命令可以直接粘贴，第一行也可以接在 `luo add` 后面；此时 `luo add` 会继续读取后续行，直到你按 `Ctrl-D` 保存，所以后续行不会继续交给 shell 执行。也可用单独参数 `-` 从标准输入读取，不需要手写 `\n`。名称默认生成短名称，例如 `cd app` 是 `cd-app`、`npm run dev` 是 `npm-dev`；若仍重名会自动追加 `-2`、`-3`。需要自定义名称时才使用 `-n <名称>`。它会安全存为单行 registry 记录；在 `luo cmd` 中选中后会还原为真实多行并填回命令行。
 
 ### luo alias — 设置快捷命令
 
@@ -143,7 +148,7 @@ luo alias off       # 取消快捷命令
 └── scripts/         # 已登记脚本的软链接目录
 ```
 
-注册表列：`name`、`description`、`kind`（`shell` | `file`）、`payload`。
+注册表列：`name`、`description`、`kind`（`shell` | `file`）、`payload`。新写入的字段会按需转义反斜杠、Tab 和换行，以保持一条记录只占一行。
 
 ## Tab 补全
 

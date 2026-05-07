@@ -51,6 +51,9 @@ If `LUO_HOME` is not the default `~/.luo`, the installer adds `export LUO_HOME=�
 luo add "caffeinate -di"            # register a shell command
 luo add ./my-script.sh              # register a script (symlinked under ~/.luo/scripts/)
 luo add -n wake "caffeinate -di"    # custom display name
+luo add                             # paste a multi-line command, then press Ctrl-D
+luo add cd app                      # or put the first line after add, paste the rest, then press Ctrl-D
+pbpaste | luo add -                 # or import a multi-line command from the clipboard
 luo help                            # built-in subcommand list (same idea as --help)
 luo cmd                             # open fuzzy picker over saved entries; Enter puts the command on your line
 luo alias pp                        # set "pp" as a short alias for luo cmd
@@ -77,11 +80,13 @@ pp                                  # same as luo cmd
 
 | Option | Meaning |
 |--------|---------|
-| `-n <name>` | Display name (default: first word of command, or script basename) |
+| `-n <name>` | Display name (default: compact name like `cd-app` or `npm-dev`; duplicate names get `-2`) |
 | `-d <desc>` | Description (scripts can embed `# luo:desc …` to set this automatically) |
 | `-f` | Overwrite an existing entry with the same name |
 
 **Path detection**: if the argument contains `/` or starts with `./` / `../` and resolves to a file → registered as **file** (symlink created under `~/.luo/scripts/`). Otherwise the whole string is stored as a **shell** command.
+
+Multi-line shell commands can be pasted directly, and the first line may be placed after `luo add`; in that form `luo add` keeps reading following lines until you press `Ctrl-D`, so they are saved instead of being executed by the shell. You can also read from standard input with the single `-` argument, so you do not need to type `\n` escapes. The default name stays compact: `cd app` becomes `cd-app`, `npm run dev` becomes `npm-dev`, and duplicate names get `-2`, `-3`, and so on. Use `-n <name>` only when you want a custom display name. They are stored safely as one registry row. When selected in `luo cmd`, they are restored as real multi-line text in the command line.
 
 ### `luo alias` — set a short alias for `luo cmd`
 
@@ -114,7 +119,7 @@ After you pick an entry, the command is written to the **ZLE line buffer** (`pri
 └── scripts/         # symlinks to registered script files
 ```
 
-Registry columns: `name`, `description`, `kind` (`shell` | `file`), `payload`.
+Registry columns: `name`, `description`, `kind` (`shell` | `file`), `payload`. Newly written fields escape backslashes, tabs, and newlines as needed so each entry stays on one physical line.
 
 ## Tab completion
 
