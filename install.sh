@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# luo — 一键安装/卸载脚本
+# luo — shell command palette 一键安装/卸载脚本
 # 安装: ./install.sh
 # 卸载: ./install.sh --uninstall
-# curl安装: curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/install.sh | bash
+# curl安装: curl -fsSL https://raw.githubusercontent.com/wuluoluoda/luo-command-palette/main/install.sh | bash
 set -euo pipefail
 
-GITHUB_RAW="https://raw.githubusercontent.com/wuluoluoda/cmdroster/main"
+GITHUB_RAW="https://raw.githubusercontent.com/wuluoluoda/luo-command-palette/main"
 
 DEST="${LUO_HOME:-$HOME/.luo}"
 MARK_BEGIN="# >>> luo script hub"

@@ -1,6 +1,8 @@
-# CmdRoster 中文说明
+# luo — 你的 Shell 命令面板
 
-**CmdRoster** 是一个面向 **macOS zsh** 的个人命令与脚本管理工具。把常用的 shell 片段或脚本登记一次，之后随时用 **fzf** 交互搜索，回车后命令直接出现在命令行上，确认无误再按 Enter 执行。
+**luo** 是一个面向 **macOS zsh** 的轻量 **Shell 命令面板**。把你决定保留的命令或脚本登记一次，之后随时用 **fzf** 搜索，选中后先填回命令行，由你确认、修改后再执行。
+
+它不试图记住你敲过的所有历史命令；它只保存你主动沉淀下来的命令。
 
 命令行工具名叫 **`luo`**（三个字母，好打）。数据默认存放在 **`~/.luo/`**（可通过 `LUO_HOME` 自定义）。
 
@@ -11,6 +13,7 @@
 - **一行安装，开箱即用**：安装脚本会复制 `luo.zsh`、初始化数据目录、检查 fzf，并把加载语句写入 zsh 实际读取的 `.zshrc` 固定 luo 区域。
 - **命令先预备，不直接执行**：从 `luo cmd` 选中条目后只填到命令行，先检查、可编辑，再按 Enter 执行。
 - **命令和脚本统一管理**：短 shell 片段、多行命令、脚本文件都能登记到同一个 fzf 菜单里。
+- **纯文本个人 runbook**：条目保存在 `registry.tsv`，容易阅读、diff、备份和审计。
 - **智能 alias 工作流**：在 `luo cmd` 中按 **Ctrl+A** 会查询现有 alias，优先用 alias 形式填入；没有 alias 时可现场创建。
 - **安全写 `.zshrc`**：创建 alias 只写 `# >>> luo aliases` 与 `# <<< luo aliases` 之间，marker 异常会拒绝写入。
 - **多行 alias 更稳**：多行命令会生成 `~/.luo/alias-scripts/<alias>.zsh` 托管脚本，`.zshrc` 只保留一行 alias。
@@ -28,7 +31,7 @@
 ### 一行命令安装（推荐）
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/wuluoluoda/luo-command-palette/main/install.sh | bash
 ```
 
 安装脚本会自动检测 fzf，若未安装会询问是否通过 Homebrew 安装。
@@ -36,8 +39,8 @@ curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/install.s
 ### 克隆后安装
 
 ```bash
-git clone https://github.com/wuluoluoda/cmdroster.git
-cd cmdroster
+git clone https://github.com/wuluoluoda/luo-command-palette.git
+cd luo-command-palette
 ./install.sh
 ```
 
@@ -55,7 +58,7 @@ LUO_HOME=~/my-tools ./install.sh
 
 若 `LUO_HOME` 不是默认的 `~/.luo`，安装脚本会在 `~/.zshrc` 里写入 `export LUO_HOME=…`。
 
-安装脚本会定位 zsh 实际读取的配置文件：`${ZDOTDIR:-$HOME}/.zshrc`。这表示若你设置了 `ZDOTDIR`，会写入 `$ZDOTDIR/.zshrc`；否则写入常见的 `~/.zshrc`。所有 luo 自动维护内容都集中在 `# >>> luo script hub` 与 `# <<< luo script hub` 之间，其中 alias 只写入内部的 `# >>> luo aliases` 与 `# <<< luo aliases` 区域。
+安装脚本会定位 zsh 实际读取的配置文件：`${ZDOTDIR:-$HOME}/.zshrc`。这表示若你设置了 `ZDOTDIR`，会写入 `$ZDOTDIR/.zshrc`；否则写入常见的 `~/.zshrc`。所有 luo 自动维护内容都集中在 `# >>> luo script hub` 与 `# <<< luo script hub` 之间，其中 alias 只写入内部的 `# >>> luo aliases` 与 `# <<< luo aliases` 区域。外层 marker 继续保留旧的 "script hub" 字样，用来兼容已有安装。
 
 ## 快速上手
 

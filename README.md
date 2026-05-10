@@ -1,6 +1,8 @@
-# CmdRoster
+# luo — a tiny command palette for your shell
 
-**CmdRoster** is a small **command-line and script management** tool for **zsh on macOS**. Register shell snippets or scripts once, then pick them with **fzf** — the chosen command is placed on your **command line** ready to review and execute.
+**luo** is a small **shell command palette** for **zsh on macOS**. Save the commands and scripts you choose to keep, search them with **fzf**, and insert the selected command back into your prompt before you run it.
+
+It does not try to remember everything you typed. It remembers the commands you intentionally saved.
 
 The interactive command is named **`luo`** (three letters, easy to type). Data lives under **`~/.luo/`** by default (`LUO_HOME`).
 
@@ -11,6 +13,7 @@ The interactive command is named **`luo`** (three letters, easy to type). Data l
 - **One-line install, ready to use**: the installer copies `luo.zsh`, initializes the data directory, checks fzf, and adds a managed loader block to the `.zshrc` file zsh actually reads.
 - **Prepare commands before running them**: picking an entry places it on your command line for review and editing instead of executing it immediately.
 - **One hub for commands and scripts**: short shell snippets, multi-line commands, and script files all live in the same searchable fzf menu.
+- **Plain-text personal runbook**: saved entries live in `registry.tsv`, which is easy to read, diff, back up, and audit.
 - **Smart alias workflow**: press **Ctrl+A** in `luo cmd` to prefer the first matching shell alias; if none exists, create one on the spot.
 - **Safe `.zshrc` writes**: generated aliases are confined to the `# >>> luo aliases` / `# <<< luo aliases` block, and malformed markers block writes.
 - **Multi-line aliases stay maintainable**: multi-line commands become managed scripts under `~/.luo/alias-scripts/<alias>.zsh`, while `.zshrc` keeps a single alias line.
@@ -28,7 +31,7 @@ The interactive command is named **`luo`** (three letters, easy to type). Data l
 ### One-liner (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/wuluoluoda/cmdroster/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/wuluoluoda/luo-command-palette/main/install.sh | bash
 ```
 
 The installer detects missing **fzf** and offers to install it via Homebrew.
@@ -36,8 +39,8 @@ The installer detects missing **fzf** and offers to install it via Homebrew.
 ### Clone and install
 
 ```bash
-git clone https://github.com/wuluoluoda/cmdroster.git
-cd cmdroster
+git clone https://github.com/wuluoluoda/luo-command-palette.git
+cd luo-command-palette
 ./install.sh
 ```
 
@@ -55,7 +58,7 @@ LUO_HOME=~/my-tools ./install.sh
 
 If `LUO_HOME` is not the default `~/.luo`, the installer adds `export LUO_HOME=…` to `~/.zshrc`.
 
-The installer targets zsh's actual startup file: `${ZDOTDIR:-$HOME}/.zshrc`. If `ZDOTDIR` is set, that means `$ZDOTDIR/.zshrc`; otherwise it means the usual `~/.zshrc`. All automatically managed luo content stays between `# >>> luo script hub` and `# <<< luo script hub`, and generated aliases are confined to the nested `# >>> luo aliases` / `# <<< luo aliases` area.
+The installer targets zsh's actual startup file: `${ZDOTDIR:-$HOME}/.zshrc`. If `ZDOTDIR` is set, that means `$ZDOTDIR/.zshrc`; otherwise it means the usual `~/.zshrc`. All automatically managed luo content stays between `# >>> luo script hub` and `# <<< luo script hub`, and generated aliases are confined to the nested `# >>> luo aliases` / `# <<< luo aliases` area. The outer marker keeps the old "script hub" wording for compatibility with existing installations.
 
 ## Quick start
 
