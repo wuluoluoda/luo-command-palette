@@ -10,6 +10,8 @@ GITHUB_RAW="https://raw.githubusercontent.com/wuluoluoda/cmdroster/main"
 DEST="${LUO_HOME:-$HOME/.luo}"
 MARK_BEGIN="# >>> luo script hub"
 MARK_END="# <<< luo script hub"
+ALIAS_MARK_BEGIN="# >>> luo aliases"
+ALIAS_MARK_END="# <<< luo aliases"
 
 _require_cmd() { command -v "$1" >/dev/null 2>&1; }
 
@@ -77,7 +79,7 @@ if ! _require_cmd fzf; then
 fi
 
 # ── 建目录 & 复制/下载文件 ───────────────────────────────────────────────────
-mkdir -p "$DEST/scripts"
+mkdir -p "$DEST/scripts" "$DEST/alias-scripts"
 
 if _is_remote; then
   # curl | bash 模式：从 GitHub 拉取源文件
@@ -106,7 +108,25 @@ ZSHRC="${ZDOTDIR:-$HOME}/.zshrc"
 [[ -f "$ZSHRC" ]] || touch "$ZSHRC"
 
 if grep -qF "$MARK_BEGIN" "$ZSHRC" 2>/dev/null; then
-  echo "已检测到 ~/.zshrc 中的 luo 配置块，跳过写入。"
+  if grep -qF "$MARK_END" "$ZSHRC" 2>/dev/null; then
+    if sed -n "/^${MARK_BEGIN}$/,/^${MARK_END}$/p" "$ZSHRC" | grep -qF "$ALIAS_MARK_BEGIN"; then
+      echo "已检测到 ~/.zshrc 中的 luo 配置块，跳过写入。"
+    else
+      tmp=$(mktemp)
+      awk -v end="$MARK_END" -v ab="$ALIAS_MARK_BEGIN" -v ae="$ALIAS_MARK_END" '
+        $0 == end {
+          print ab
+          print ae
+          print
+          next
+        }
+        { print }
+      ' "$ZSHRC" >"$tmp" && mv "$tmp" "$ZSHRC"
+      echo "已检测到 ~/.zshrc 中的 luo 配置块，并补齐 aliases 区域。"
+    fi
+  else
+    echo "⚠️  检测到 ~/.zshrc 中 luo 配置块起始标记，但缺少结束标记；为避免误改，请手动检查 $ZSHRC。" >&2
+  fi
 else
   {
     printf '\n%s\n' "$MARK_BEGIN"
@@ -115,6 +135,8 @@ else
       printf 'export LUO_HOME=%q\n' "$DEST"
     fi
     printf '[ -f %q ] && source %q\n' "$DEST/luo.zsh" "$DEST/luo.zsh"
+    printf '%s\n' "$ALIAS_MARK_BEGIN"
+    printf '%s\n' "$ALIAS_MARK_END"
     printf '%s\n' "$MARK_END"
   } >>"$ZSHRC"
   echo "已将 luo 写入: ${ZSHRC}（新开终端自动生效）"

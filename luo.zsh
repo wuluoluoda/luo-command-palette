@@ -133,7 +133,7 @@ _luo_init_files() {
   h=$(_luo_home)
   r="$h/registry.tsv"
   u="$h/usage.tsv"
-  mkdir -p "$h/scripts"
+  mkdir -p "$h/scripts" "$h/alias-scripts"
   if [[ ! -f $r ]]; then
     _luo_header_new >"$r"
   else
@@ -300,6 +300,11 @@ _luo_usage() {
   打开已登记 shell / 脚本的 fzf 选择器（名称字母序；Tab 用当前项名称缩小搜索；Enter 填回命令行）:
     luo cmd           主入口（旧版曾用 luo help 表示此功能，现已拆分）
     luo pick          与 luo cmd 完全同义（保留兼容）
+                    普通模式下按 Ctrl+A 会临时查询当前 zsh aliases，
+                    并尽量用第一个匹配 alias 形式填回命令行；
+                    例如 alias gs='git status' 时，选中 git status -sb 后会填入 gs -sb。
+                    若未找到匹配 alias，会进入创建 alias 提示；创建后写入 ~/.zshrc 的 luo aliases 区域，
+                    创建或取消后返回本选择器。
                     按 Fn+F2（笔记本常见：须 Fn 才发出 F2）进入/退出「删除模式」（界面为绿色）；删除模式下 Enter 直接删当前项。
                     每次在普通模式下用 Enter 将命令填入命令行，并累计使用次数（见 usage.tsv）；
                     删除前若次数 >30 会交互确认（非交互终端则拒绝删除）。
@@ -920,10 +925,401 @@ _luo_commit_pick_command() {
   add-zsh-hook precmd _luo_precmd_inject 2>/dev/null
 }
 
+_luo_trim_outer_space() {
+  local s=$1
+  while [[ $s == [[:space:]]* ]]; do
+    s=${s#[[:space:]]}
+  done
+  while [[ $s == *[[:space:]] ]]; do
+    s=${s%[[:space:]]}
+  done
+  print -r -- "$s"
+}
+
+_luo_alias_form_for_command() {
+  local cmd=$1 cmd_cmp cmd_key alias_name alias_value alias_cmp alias_key suffix
+  local alias_script_payload alias_script_key
+  local best_name= best_suffix=
+  integer alias_len best_len=0
+
+  cmd_cmp=$(_luo_trim_outer_space "$cmd")
+  [[ -n $cmd_cmp ]] || { print -r -- "$cmd"; return 1; }
+  cmd_key=$(_luo_shell_payload_key "$cmd_cmp" 2>/dev/null) || cmd_key=
+
+  for alias_name in ${(ok)aliases}; do
+    alias_value=${aliases[$alias_name]}
+    alias_cmp=$(_luo_trim_outer_space "$alias_value")
+    [[ -n $alias_name && -n $alias_cmp ]] || continue
+
+    alias_script_payload=$(_luo_alias_script_payload_from_alias_value "$alias_cmp" 2>/dev/null) || alias_script_payload=
+    if [[ -n $alias_script_payload && -n $cmd_key ]]; then
+      alias_script_key=$(_luo_shell_payload_key "$alias_script_payload" 2>/dev/null) || alias_script_key=
+      if [[ -n $alias_script_key && $alias_script_key == "$cmd_key" ]]; then
+        best_name=$alias_name
+        best_suffix=
+        break
+      fi
+    fi
+
+    suffix=
+    alias_len=0
+    if [[ $cmd_cmp == "$alias_cmp" ]]; then
+      alias_len=${#alias_cmp}
+    elif [[ $cmd_cmp == "$alias_cmp"[[:space:]]* ]]; then
+      suffix=${cmd_cmp#$alias_cmp}
+      while [[ $suffix == [[:space:]]* ]]; do
+        suffix=${suffix#[[:space:]]}
+      done
+      alias_len=${#alias_cmp}
+    elif [[ -n $cmd_key ]]; then
+      alias_key=$(_luo_shell_payload_key "$alias_cmp" 2>/dev/null) || alias_key=
+      if [[ -n $alias_key && $alias_key == "$cmd_key" ]]; then
+        alias_len=${#alias_key}
+      else
+        continue
+      fi
+    else
+      continue
+    fi
+
+    if (( alias_len > best_len )); then
+      best_name=$alias_name
+      best_suffix=$suffix
+      best_len=$alias_len
+    fi
+  done
+
+  if [[ -n $best_name ]]; then
+    if [[ -n $best_suffix ]]; then
+      print -r -- "$best_name $best_suffix"
+    else
+      print -r -- "$best_name"
+    fi
+    return 0
+  else
+    print -r -- "$cmd"
+    return 1
+  fi
+}
+
+_luo_fzf_supports_key() {
+  local key=$1
+  [[ -n $key ]] || return 1
+  printf 'x\n' | command fzf --filter=x --expect="$key" >/dev/null 2>&1
+}
+
+_luo_alias_pick_key() {
+  local key=${LUO_ALIAS_KEY:-ctrl-a}
+  if _luo_fzf_supports_key "$key"; then
+    print -r -- "$key"
+    return 0
+  fi
+  if [[ $key != ctrl-a ]] && _luo_fzf_supports_key ctrl-a; then
+    if [[ -n ${LUO_ALIAS_KEY:-} ]]; then
+      print -u2 "luo: 当前 fzf 不支持快捷键 '$key'，本次改用 ctrl-a。"
+    fi
+    print -r -- ctrl-a
+    return 0
+  fi
+  print -r -- alt-enter
+}
+
+_luo_alias_pick_key_label() {
+  local key=$1
+  case $key in
+    alt-enter) print -r -- "Option+Enter" ;;
+    ctrl-a) print -r -- "Ctrl+A" ;;
+    *) print -r -- "$key" ;;
+  esac
+}
+
+_luo_zshrc_file() {
+  print -r -- "${ZDOTDIR:-$HOME}/.zshrc"
+}
+
+_luo_zshrc_source_line() {
+  local f="$(_luo_home)/luo.zsh"
+  print -r -- "[ -f ${(qq)f} ] && source ${(qq)f}"
+}
+
+_luo_zshrc_validate_luo_regions() {
+  local zshrc=$1
+  [[ -f $zshrc ]] || return 0
+  command awk \
+    -v rb='# >>> luo script hub' \
+    -v re='# <<< luo script hub' \
+    -v ab='# >>> luo aliases' \
+    -v ae='# <<< luo aliases' '
+      $0 == rb { rb_count++; rb_line = NR }
+      $0 == re { re_count++; re_line = NR }
+      $0 == ab { ab_count++; ab_line = NR }
+      $0 == ae { ae_count++; ae_line = NR }
+      END {
+        if ((rb_count == 0 && re_count > 0) || (rb_count > 0 && re_count == 0) || rb_count > 1 || re_count > 1) exit 1
+        if (rb_count == 1 && rb_line >= re_line) exit 1
+        if ((ab_count == 0 && ae_count > 0) || (ab_count > 0 && ae_count == 0) || ab_count > 1 || ae_count > 1) exit 1
+        if (ab_count == 1) {
+          if (ab_line >= ae_line) exit 1
+          if (rb_count != 1) exit 1
+          if (!(rb_line < ab_line && ae_line < re_line)) exit 1
+        }
+      }
+    ' "$zshrc"
+}
+
+_luo_shell_alias_name_valid() {
+  local name=$1
+  if [[ -z $name || $name == *[[:space:]]* || $name == */* || $name == *=* || $name == *\"* || $name == *\'* || $name == *\\* || $name == -* ]]; then
+    print -u2 "luo alias create: alias 名不能含空格、斜杠、等号、引号、反斜杠，也不能以 - 开头。"
+    return 1
+  fi
+  if [[ $name == luo ]]; then
+    print -u2 "luo alias create: 不能使用 'luo' 作为 alias 名（会覆盖主命令）。"
+    return 1
+  fi
+  if [[ -n ${_LUO_CURRENT_ALIAS:-} && $name == "$_LUO_CURRENT_ALIAS" ]]; then
+    print -u2 "luo alias create: 不能使用 '$name'，它已经是 luo cmd 的快捷函数。"
+    return 1
+  fi
+  return 0
+}
+
+_luo_zshrc_save_shell_alias() {
+  local name=$1 value=$2 zshrc tmp alias_line source_line custom_home
+  zshrc=$(_luo_zshrc_file)
+  mkdir -p "${zshrc:h}" || return 1
+  [[ -f $zshrc ]] || : >"$zshrc"
+
+  if ! _luo_zshrc_validate_luo_regions "$zshrc"; then
+    print -u2 "luo: $zshrc 中 luo marker 异常，未写入 alias。请检查 # >>>/# <<< luo script hub 与 luo aliases 区域。"
+    return 1
+  fi
+
+  alias_line="alias ${name}=${(qq)value}"
+  source_line=$(_luo_zshrc_source_line)
+  if [[ $(_luo_home) != "$HOME/.luo" ]]; then
+    local luo_home=$(_luo_home)
+    custom_home="export LUO_HOME=${(qq)luo_home}"
+  fi
+
+  tmp=$(mktemp "${TMPDIR:-/tmp}/luo-zshrc.XXXXXX")
+  LUO_ALIAS_LINE="$alias_line" LUO_SOURCE_LINE="$source_line" LUO_CUSTOM_HOME="$custom_home" command awk \
+    -v rb='# >>> luo script hub' \
+    -v re='# <<< luo script hub' \
+    -v ab='# >>> luo aliases' \
+    -v ae='# <<< luo aliases' \
+    -v n="$name" '
+      BEGIN {
+        line = ENVIRON["LUO_ALIAS_LINE"]
+        src = ENVIRON["LUO_SOURCE_LINE"]
+        custom = ENVIRON["LUO_CUSTOM_HOME"]
+        in_alias = 0
+        saw_block = 0
+        saw_alias = 0
+      }
+      $0 == rb { saw_block = 1; print; next }
+      $0 == ab { saw_alias = 1; in_alias = 1; print; next }
+      $0 == ae { print line; print; in_alias = 0; next }
+      $0 == re {
+        if (!saw_alias) {
+          print ab
+          print line
+          print ae
+        }
+        print
+        next
+      }
+      in_alias {
+        if (index($0, "alias " n "=") == 1) next
+        print
+        next
+      }
+      { print }
+      END {
+        if (!saw_block) {
+          print ""
+          print rb
+          if (custom != "") print custom
+          print src
+          print ab
+          print line
+          print ae
+          print re
+        }
+      }
+    ' "$zshrc" >"$tmp" || return 1
+  command mv -f "$tmp" "$zshrc"
+}
+
+_luo_alias_script_dir() {
+  print -r -- "$(_luo_home)/alias-scripts"
+}
+
+_luo_alias_script_path() {
+  local name=$1
+  print -r -- "$(_luo_alias_script_dir)/${name}.zsh"
+}
+
+_luo_command_needs_current_shell() {
+  local cmd=$1 line trimmed
+  local -a lines
+  lines=("${(@f)cmd}")
+  for line in $lines; do
+    trimmed=$(_luo_trim_outer_space "$line")
+    [[ -z $trimmed || $trimmed == \#* ]] && continue
+    case $trimmed in
+      cd(|[[:space:]]*)|pushd(|[[:space:]]*)|popd(|[[:space:]]*)|export[[:space:]]*|unset[[:space:]]*|alias[[:space:]]*|unalias[[:space:]]*|source[[:space:]]*|.[[:space:]]*)
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
+_luo_write_alias_script() {
+  local name=$1 body=$2 script_file tmp dir
+  dir=$(_luo_alias_script_dir)
+  script_file=$(_luo_alias_script_path "$name")
+  mkdir -p "$dir" || return 1
+
+  if [[ -e $script_file && ! -f $script_file ]]; then
+    print -u2 "luo: alias 脚本路径已存在但不是普通文件: $script_file"
+    return 1
+  fi
+
+  tmp=$(mktemp "${TMPDIR:-/tmp}/luo-alias-script.XXXXXX")
+  {
+    print -r -- "#!/usr/bin/env zsh"
+    print -r -- "# Managed by luo alias: $name"
+    print -r -- "# luo:payload-begin"
+    print -r -- "$body"
+  } >"$tmp" || return 1
+  command chmod 700 "$tmp" 2>/dev/null || true
+  command mv -f "$tmp" "$script_file" || return 1
+  command chmod 700 "$script_file" 2>/dev/null || true
+}
+
+_luo_alias_script_payload() {
+  local script_file=$1 line in_payload=0
+  [[ -f $script_file ]] || return 1
+  while IFS= read -r line || [[ -n $line ]]; do
+    if (( in_payload )); then
+      print -r -- "$line"
+    elif [[ $line == "# luo:payload-begin" ]]; then
+      in_payload=1
+    fi
+  done <"$script_file"
+  (( in_payload )) || return 1
+}
+
+_luo_alias_script_payload_from_alias_value() {
+  local value=$1 script_file dir
+  local -a words
+  words=(${(z)value}) || return 1
+  if [[ ${words[1]} == zsh && -n ${words[2]} ]]; then
+    script_file=${(Q)words[2]}
+  elif [[ ${words[1]} == source || ${words[1]} == . ]] && [[ -n ${words[2]} ]]; then
+    script_file=${(Q)words[2]}
+  else
+    return 1
+  fi
+  dir="$(_luo_alias_script_dir)/"
+  [[ ${script_file:A} == ${dir:A}/* || ${script_file:A} == ${dir:A} ]] || return 1
+  _luo_alias_script_payload "${script_file:A}"
+}
+
+_luo_alias_value_for_command() {
+  local name=$1 cmd=$2 mode=run script_path
+  if [[ $cmd == *$'\n'* || $cmd == *$'\r'* ]]; then
+    if _luo_command_needs_current_shell "$cmd"; then
+      print -u2 -r -- ""
+      print -u2 "luo: 这段多行命令看起来会修改当前 shell（如 cd/export/alias/source）。"
+      if [[ -t 0 ]]; then
+        read -q "?alias 执行时用 source 运行脚本，让它影响当前 shell？[y/N] " && mode=source
+        print -u2 ""
+      fi
+    fi
+    script_path=$(_luo_alias_script_path "$name")
+    if [[ $mode == source ]]; then
+      print -r -- "source ${(q)script_path}"
+    else
+      print -r -- "zsh ${(q)script_path}"
+    fi
+  else
+    print -r -- "$cmd"
+  fi
+}
+
+_luo_create_shell_alias_for_command() {
+  local cmd=$1 name existing alias_value
+  if [[ ! -t 0 ]]; then
+    print -u2 "luo: 非交互终端，无法创建 alias。"
+    return 1
+  fi
+
+  print -r -- ""
+  print -r -- "luo: 未找到匹配 alias。"
+  if [[ $cmd == *$'\n'* || $cmd == *$'\r'* ]]; then
+    print -r -- "命令为多行内容；将创建 luo 托管脚本，并在 ~/.zshrc 的 luo aliases 区域写入单行 alias。"
+  else
+    print -r -- "命令: $cmd"
+  fi
+
+  while true; do
+    read -r "?创建 alias 名称（留空取消，完成后返回 luo cmd）: " name || {
+      print ""
+      return 1
+    }
+    name=$(_luo_trim_outer_space "$name")
+    [[ -n $name ]] || {
+      print -r -- "luo: 已取消创建 alias。"
+      return 1
+    }
+    _luo_shell_alias_name_valid "$name" || continue
+    alias_value=$(_luo_alias_value_for_command "$name" "$cmd") || return 1
+
+    if [[ -n ${aliases[$name]+x} ]]; then
+      existing=${aliases[$name]}
+      if [[ $existing == "$alias_value" ]]; then
+        if [[ $cmd == *$'\n'* || $cmd == *$'\r'* ]]; then
+          _luo_write_alias_script "$name" "$cmd" || return 1
+        fi
+        _luo_zshrc_save_shell_alias "$name" "$alias_value" || return 1
+        alias "${name}=${alias_value}" || return 1
+        print -r -- "luo: alias 已存在且内容相同: ${name}=${(qq)alias_value}"
+        print -r -- "luo: 返回 cmd 选择器。"
+        return 0
+      fi
+      print -u2 "luo: alias '$name' 已存在: alias ${name}=${(qq)existing}"
+      read -q "?覆盖？[y/N] " || {
+        print ""
+        continue
+      }
+      print ""
+    elif command -v "$name" >/dev/null 2>&1; then
+      print -u2 "luo: '$name' 已是系统中存在的命令。"
+      read -q "?仍要创建 alias 覆盖？[y/N] " || {
+        print ""
+        continue
+      }
+      print ""
+    fi
+
+    if [[ $cmd == *$'\n'* || $cmd == *$'\r'* ]]; then
+      _luo_write_alias_script "$name" "$cmd" || return 1
+    fi
+    _luo_zshrc_save_shell_alias "$name" "$alias_value" || return 1
+    alias "${name}=${alias_value}" || return 1
+    print -r -- "luo: 已创建 alias: ${name}=${(qq)alias_value}"
+    print -r -- "luo: 返回 cmd 选择器。"
+    return 0
+  done
+}
+
 _luo_pick() {
   local h line name desc kind payload fullpath cmd
   local -a fl
-  local out hdr pr color cnt
+  local out hdr pr color cnt picked_key alias_key alias_key_label
   integer del_mode=${LUO_DELETE_START:-0}
   unset LUO_DELETE_START
 
@@ -931,6 +1327,8 @@ _luo_pick() {
   _luo_init_files
   _luo_sync_merge ""
   h=$(_luo_home)
+  alias_key=$(_luo_alias_pick_key)
+  alias_key_label=$(_luo_alias_pick_key_label "$alias_key")
 
   while true; do
     if (( del_mode )); then
@@ -938,7 +1336,7 @@ _luo_pick() {
       pr=$'\e[1;32mDEL>\e[0m '
       color='prompt:#00cc00,pointer:#00ff00,fg+:#ccffcc,border:#00aa00'
     else
-      hdr=$'Tab 缩小 | Enter 填入命令行 | \e[33mFn+F2\e[0m 删除模式（绿色）| Ctrl+N / Esc 退出'
+      hdr="Tab 缩小 | Enter 完整命令 | ${alias_key_label} 别名/创建 | "$'\e[33mFn+F2\e[0m 删除模式（绿色）| Ctrl+N / Esc 退出'
       pr='> '
       color=
     fi
@@ -954,14 +1352,15 @@ _luo_pick() {
         ${color:+--color="$color"} \
         --prompt="$pr" \
         --header="$hdr" \
-        --expect=f2 \
+        --expect="f2,$alias_key" \
         --bind='tab:change-query({1})' \
         --bind='ctrl-n:abort'
     ) || return 0
     [[ -n $out ]] || return 0
 
     fl=("${(@f)out}")
-    if [[ ${fl[1]} == f2 ]]; then
+    picked_key=${fl[1]}
+    if [[ $picked_key == f2 ]]; then
       del_mode=$(( 1 - del_mode ))
       continue
     fi
@@ -978,6 +1377,7 @@ _luo_pick() {
     [[ -n $name && -n $kind && -n $payload ]] || return 1
 
     if (( del_mode )); then
+      [[ $picked_key == "$alias_key" ]] && continue
       cnt=$(_luo_usage_get "$name")
       cnt=$(( cnt + 0 ))
       if (( cnt > 30 )); then
@@ -999,8 +1399,15 @@ _luo_pick() {
     fi
 
     if [[ $kind == shell ]]; then
+      cmd=$payload
+      if [[ $picked_key == "$alias_key" ]]; then
+        if ! cmd=$(_luo_alias_form_for_command "$cmd"); then
+          _luo_create_shell_alias_for_command "$payload"
+          continue
+        fi
+      fi
       _luo_usage_incr "$name"
-      _luo_commit_pick_command "$payload"
+      _luo_commit_pick_command "$cmd"
       return 0
     fi
 
@@ -1018,6 +1425,12 @@ _luo_pick() {
       cmd=${(q)fullpath}
     else
       cmd="zsh ${(q)fullpath}"
+    fi
+    if [[ $picked_key == "$alias_key" ]]; then
+      if ! cmd=$(_luo_alias_form_for_command "$cmd"); then
+        _luo_create_shell_alias_for_command "$cmd"
+        continue
+      fi
     fi
     _luo_usage_incr "$name"
     _luo_commit_pick_command "$cmd"
@@ -1133,5 +1546,5 @@ fi
 # unfunction 在目标不存在时返回非 0，会导致「source 本文件」整体退出码为 1
 unfunction _luo 2>/dev/null || :
 
-# source 时自动加载用户设置的快捷命令
+# source 时自动加载用户设置的 luo cmd 快捷函数
 _luo_alias_load

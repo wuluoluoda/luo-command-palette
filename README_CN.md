@@ -6,6 +6,16 @@
 
 > English documentation: [README.md](README.md)
 
+## 功能亮点
+
+- **一行安装，开箱即用**：安装脚本会复制 `luo.zsh`、初始化数据目录、检查 fzf，并把加载语句写入 zsh 实际读取的 `.zshrc` 固定 luo 区域。
+- **命令先预备，不直接执行**：从 `luo cmd` 选中条目后只填到命令行，先检查、可编辑，再按 Enter 执行。
+- **命令和脚本统一管理**：短 shell 片段、多行命令、脚本文件都能登记到同一个 fzf 菜单里。
+- **智能 alias 工作流**：在 `luo cmd` 中按 **Ctrl+A** 会查询现有 alias，优先用 alias 形式填入；没有 alias 时可现场创建。
+- **安全写 `.zshrc`**：创建 alias 只写 `# >>> luo aliases` 与 `# <<< luo aliases` 之间，marker 异常会拒绝写入。
+- **多行 alias 更稳**：多行命令会生成 `~/.luo/alias-scripts/<alias>.zsh` 托管脚本，`.zshrc` 只保留一行 alias。
+- **可回收、可维护**：支持删除模式、使用次数统计、同名/冲突确认、旧 registry 自动兼容。
+
 ## 依赖
 
 | 工具 | 安装方式 |
@@ -45,6 +55,8 @@ LUO_HOME=~/my-tools ./install.sh
 
 若 `LUO_HOME` 不是默认的 `~/.luo`，安装脚本会在 `~/.zshrc` 里写入 `export LUO_HOME=…`。
 
+安装脚本会定位 zsh 实际读取的配置文件：`${ZDOTDIR:-$HOME}/.zshrc`。这表示若你设置了 `ZDOTDIR`，会写入 `$ZDOTDIR/.zshrc`；否则写入常见的 `~/.zshrc`。所有 luo 自动维护内容都集中在 `# >>> luo script hub` 与 `# <<< luo script hub` 之间，其中 alias 只写入内部的 `# >>> luo aliases` 与 `# <<< luo aliases` 区域。
+
 ## 快速上手
 
 ```bash
@@ -63,6 +75,8 @@ luo help
 # 打开已登记条目的 fzf 交互菜单，回车后命令出现在命令行
 luo cmd
 
+# 在 luo cmd 中按 Ctrl+A：优先填入 alias 形式，无 alias 时引导创建
+
 # 设置一个更短的快捷命令（例如 ql），以后直接 ql 即可
 luo alias ql
 ql
@@ -75,7 +89,7 @@ ql
 | 命令 | 说明 |
 |------|------|
 | `luo` / `luo help` / `luo usage` / `luo commands` / `luo -h` / `--help` | 打印 **luo 工具自身的子命令说明** |
-| `luo cmd` | 对已登记条目打开 **fzf**（字母序）；**Tab** 缩小范围；**Enter** 把命令填到命令行；**Fn+F2** 切换删除模式；**Ctrl+N** / **Esc** 退出 |
+| `luo cmd` | 对已登记条目打开 **fzf**（字母序）；**Tab** 缩小范围；**Enter** 把完整命令填到命令行；**Ctrl+A** 查询当前 shell alias 并尽量用 alias 形式填入，无匹配时引导创建 alias；**Fn+F2** 切换删除模式；**Ctrl+N** / **Esc** 退出 |
 | `luo pick` | 与 `luo cmd` 完全相同 |
 | `luo add [选项] …` | 登记命令或脚本（见下文） |
 | `luo list` | 打印全部条目（带表头的 TSV） |
@@ -127,6 +141,12 @@ luo alias off       # 取消快捷命令
 
 选中后，命令通过 `print -z` 写入 **ZLE 行编辑缓冲**（在 `precmd` 钩子里调用，确保 fzf 已彻底退出、终端状态已还原）。命令出现在提示符后，你可以修改，确认无误再按 **Enter** 执行。
 
+普通模式下，若按 **Ctrl+A** 选中条目，`luo` 会在这一刻才查询当前 zsh 的 `alias` 表，并尽量把命令转换成第一个匹配的 alias 形式。例如已有 `alias gs='git status'`，选中 `git status -sb` 后按 **Ctrl+A**，命令行会预备为 `gs -sb`；普通 **Enter** 仍始终填入完整命令。
+
+若没有匹配 alias，`luo` 会提示输入 alias 名称，创建后写入 `~/.zshrc` 的 luo 专区（`# >>> luo aliases` 到 `# <<< luo aliases` 之间），然后返回刚才的 `luo cmd` 选择器。单行命令会直接写为普通 alias；多行命令会保存为 `~/.luo/alias-scripts/<alias>.zsh` 托管脚本，`.zshrc` 中只写一行指向该脚本的 alias。默认快捷键是 fzf 明确支持的 **Ctrl+A**；如需改键，可用 `LUO_ALIAS_KEY` 指定实际发出的 fzf 键名。
+
+创建 alias 时遵循这些规则：alias 名不能含空格、斜杠、等号、引号、反斜杠，也不能以 `-` 开头；不能使用 `luo` 或当前 `luo alias` 快捷函数名；若同名 alias 已存在且内容相同则直接成功，内容不同会询问是否覆盖；若名称与已有系统命令冲突，也会询问确认；多行命令若看起来会修改当前 shell（如 `cd`、`export`、`alias`、`source`），会询问是否用 `source` 方式运行脚本；若 `.zshrc` 中 luo marker 异常，则拒绝写入并提示手动修复。
+
 ### 删除模式
 
 在 `luo cmd`（或 `luo pick`）界面按 **Fn+F2**（Mac 笔记本 F 行默认为媒体键，需 Fn）进入绿色的删除模式：
@@ -145,6 +165,7 @@ luo alias off       # 取消快捷命令
 ├── registry.tsv     # 条目数据库（制表符分隔，UTF-8）
 ├── usage.tsv        # 各条目使用次数（超过 30 次删除时提示确认）
 ├── alias            # 快捷命令名（一行纯文本，由 luo alias 写入）
+├── alias-scripts/   # luo cmd 为多行 alias 生成的托管脚本
 └── scripts/         # 已登记脚本的软链接目录
 ```
 
